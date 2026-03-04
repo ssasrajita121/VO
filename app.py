@@ -237,6 +237,20 @@ def process_presentation(uploaded_file, target_duration_minutes=60):
             
             audio_url = generate_audio_speakatoo(voice_script, f"Slide_{idx}")
             
+            # Add script to slide notes - FIXED!
+            try:
+                # Access the notes slide (creates if doesn't exist)
+                notes_slide = slide.notes_slide
+                notes_text_frame = notes_slide.notes_text_frame
+                
+                # Clear existing notes and add voice-over script
+                notes_text_frame.clear()
+                notes_text_frame.text = voice_script
+                
+                st.success(f"✅ Slide {idx}: Script added to notes ({len(voice_script)} chars)")
+            except Exception as e:
+                st.warning(f"⚠️ Slide {idx}: Could not add notes - {str(e)}")
+            
             if audio_url:
                 if add_audio_to_slide(slide, audio_url):
                     success_count += 1
