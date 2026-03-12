@@ -40,14 +40,47 @@ SPEAKATOO_CONFIG = {
 }
 
 def extract_slide_content(slide):
-    """Extract text content from a slide"""
+    """Extract text content from a slide, excluding header/footer"""
     content = []
+    
+    # Keywords to exclude (EduBridge branding/footer)
+    exclude_keywords = [
+        "edubridge",
+        "india's leading workforce",
+        "letslearntoearn",
+        "all rights reserved",
+        "no part of this document",
+        "ebec technologies",
+        "application for written permission",
+        "with leading corporates"
+    ]
+    
+    # Get slide title
     if slide.shapes.title:
-        content.append(f"Title: {slide.shapes.title.text}")
+        title_text = slide.shapes.title.text.strip()
+        if title_text:
+            content.append(f"Title: {title_text}")
+    
+    # Get content from other shapes, filtering out header/footer
     for shape in slide.shapes:
         if hasattr(shape, "text") and shape.text.strip():
-            if shape != slide.shapes.title:
-                content.append(shape.text.strip())
+            # Skip if it's the title (already added)
+            if shape == slide.shapes.title:
+                continue
+            
+            text = shape.text.strip().lower()
+            
+            # Skip if text contains branding/footer keywords
+            if any(keyword in text for keyword in exclude_keywords):
+                continue
+            
+            # Skip very short text (likely decorative)
+            if len(text) < 3:
+                continue
+            
+            # Add the original (non-lowercased) text
+            content.append(shape.text.strip())
+    
     return "\n".join(content) if content else "Slide content"
 
 def generate_voice_script(slide_content, allocated_seconds, slide_number, total_slides):
@@ -162,22 +195,18 @@ def add_audio_to_slide(slide, audio_url):
                 tmp_audio_path = tmp_audio.name
             
             # Insert audio into slide
-            # Position for speaker icon (bottom-right)
             left = Inches(8.5)
             top = Inches(4.8)
             
-            # Add audio to slide - creates speaker icon automatically
-            # By default, audio plays on click in PowerPoint
+            # Add audio to slide
             movie = slide.shapes.add_movie(
                 tmp_audio_path,
                 left, top,
                 width=Inches(0.5),
                 height=Inches(0.5),
-                poster_frame_image=None,  # Use default speaker icon
+                poster_frame_image=None,
                 mime_type='audio/mp3'
             )
-            
-            # Audio plays on click by default - no need to set action
             
             # Clean up temp file
             try:
@@ -187,14 +216,14 @@ def add_audio_to_slide(slide, audio_url):
             
             return True
         else:
-            st.error(f"❌ Failed to download audio: {audio_response.status_code}")
+            st.error(f"Failed to download audio: {audio_response.status_code}")
             return False
             
     except Exception as e:
         st.error(f"Error embedding audio: {str(e)}")
         return False
 
-def process_presentation(uploaded_file, target_duration_minutes=60):
+def process_presentation(uploaded_file, target_duration_minutes=10):
     """Process presentation and add voice-overs"""
     
     with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as tmp_file:
@@ -213,7 +242,7 @@ def process_presentation(uploaded_file, target_duration_minutes=60):
         progress_bar = st.progress(0)
         status_text = st.empty()
         success_count = 0
-        total_chars = 0  # Track total characters
+        total_chars = 0
         
         for idx, slide in enumerate(prs.slides, 1):
             status_text.text(f"Processing slide {idx}/{total_slides}...")
@@ -229,34 +258,29 @@ def process_presentation(uploaded_file, target_duration_minutes=60):
             
             char_count = len(voice_script)
             word_count = len(voice_script.split())
-            total_chars += char_count  # Add to total
+            total_chars += char_count
             
-            with st.expander(f"📝 Slide {idx} Script: {word_count} words, {char_count} chars"):
+            with st.expander(f"📝 Slide {idx}: {word_count} words, {char_count} chars"):
                 st.write(voice_script)
-                st.caption(f"⏱️ Target: {int(seconds_per_slide)}s | Words: {word_count} | Characters: {char_count}")
+                st.caption(f"⏱️ {int(seconds_per_slide)}s | Words: {word_count} | Chars: {char_count}")
             
             audio_url = generate_audio_speakatoo(voice_script, f"Slide_{idx}")
             
-            # Add script to slide notes - FIXED!
+            # Add script to notes
             try:
-                # Access the notes slide (creates if doesn't exist)
                 notes_slide = slide.notes_slide
                 notes_text_frame = notes_slide.notes_text_frame
-                
-                # Clear existing notes and add voice-over script
                 notes_text_frame.clear()
                 notes_text_frame.text = voice_script
-                
-                st.success(f"✅ Slide {idx}: Script added to notes ({len(voice_script)} chars)")
             except Exception as e:
-                st.warning(f"⚠️ Slide {idx}: Could not add notes - {str(e)}")
+                st.warning(f"⚠️ Could not add notes to slide {idx}")
             
             if audio_url:
                 if add_audio_to_slide(slide, audio_url):
                     success_count += 1
-                    st.success(f"✅ Slide {idx}: Audio added")
+                    st.success(f"✅ Slide {idx}: Complete")
                 else:
-                    st.warning(f"⚠️ Slide {idx}: Audio generated but icon failed")
+                    st.warning(f"⚠️ Slide {idx}: Audio generated but embedding failed")
             else:
                 st.error(f"❌ Slide {idx}: Audio generation failed")
             
@@ -269,19 +293,13 @@ def process_presentation(uploaded_file, target_duration_minutes=60):
         status_text.text("✅ Complete!")
         progress_bar.progress(1.0)
         
-        # Show character usage summary
-        st.success(f"""
-        📊 **Character Usage Summary:**
-        - Total characters: **{total_chars:,}**
-        - Average per slide: **{total_chars // total_slides:,}**
-        - Estimated Speakatoo cost: Based on your plan
-        """)
+        st.success(f"📊 Total: {total_chars:,} characters | Avg: {total_chars // total_slides:,} per slide")
         
         return output_path, success_count, total_slides, total_chars
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        return None, 0, 0, 0  # Added total_chars
+        return None, 0, 0, 0
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -292,20 +310,38 @@ st.markdown('<div style="text-align:center;color:#2D3E6D;margin-bottom:2rem">Add
 
 with st.expander("📖 How It Works"):
     st.markdown("""
-    1. **Upload** PowerPoint (.pptx)
-    2. **Set duration** (default: 60 minutes)
-    3. **Generate** - AI creates scripts and audio
-    4. **Download** presentation with 🔊 icons
-    5. **Click 🔊** during presentation to play audio
+    1. Upload PowerPoint (.pptx)
+    2. Set duration (slider or type exact minutes)
+    3. Generate - AI creates scripts and audio
+    4. Download presentation with 🔊 icons
+    5. Click 🔊 during presentation to play audio
     
-    **Voice:** Neerja (Female, Indian English, Neural)
+    **Voice:** Neerja (Female, Indian English, Neural)  
+    **Note:** Header/footer text automatically excluded
     """)
 
 col1, col2 = st.columns([2, 1])
 
 with col1:
     uploaded_file = st.file_uploader("Upload PowerPoint", type=['pptx'])
-    target_duration = st.slider("Duration (minutes)", 10, 120, 60, 5)
+    
+    input_method = st.radio(
+        "Set duration:",
+        ["Slider", "Type exact minutes"],
+        horizontal=True
+    )
+    
+    if input_method == "Slider":
+        target_duration = st.slider("Duration (minutes)", 5, 120, 10, 5)
+    else:
+        target_duration = st.number_input(
+            "Enter minutes:",
+            min_value=1,
+            max_value=180,
+            value=10,
+            step=1,
+            help="Enter exact number of minutes"
+        )
 
 with col2:
     st.info(f"""
@@ -314,6 +350,7 @@ with col2:
     - Language: English (India)
     - Engine: Neural AI
     - Format: MP3
+    - Duration: {target_duration} min
     """)
     
     if GOOGLE_API_KEY:
@@ -328,13 +365,13 @@ st.markdown("---")
 if uploaded_file:
     if st.button("🎙️ Generate Voice-Overs", use_container_width=True):
         if not GOOGLE_API_KEY:
-            st.error("⚠️ Set GOOGLE_API_KEY in .env")
+            st.error("⚠️ Set GOOGLE_API_KEY in .env or Streamlit secrets")
         else:
             output_path, success, total, total_chars = process_presentation(uploaded_file, target_duration)
             
             if output_path and os.path.exists(output_path):
                 st.success(f"🎉 Added voice-overs to {success}/{total} slides!")
-                st.info(f"📊 Total characters used: **{total_chars:,}**")
+                st.info(f"📊 Total characters: **{total_chars:,}**")
                 
                 with open(output_path, 'rb') as f:
                     pptx_data = f.read()
@@ -349,7 +386,7 @@ if uploaded_file:
                 
                 os.remove(output_path)
                 
-                st.info("✅ Open in PowerPoint and click 🔊 icons to play audio")
+                st.info("✅ Open in PowerPoint and click 🔊 to play audio")
 else:
     st.info("👆 Upload a PowerPoint to begin")
 
