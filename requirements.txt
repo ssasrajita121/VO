@@ -1,5 +1,5 @@
 streamlit
-google-generativeai
+google-generativeai>=2.0.0
 python-dotenv
 python-pptx
 requests
