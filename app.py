@@ -141,6 +141,7 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
         
         # Corrected payload - ssml_mode as integer, not string
         payload = {
+            "api_key": SPEAKATOO_CONFIG["api_key"],  # Add this line!
             "username": SPEAKATOO_CONFIG["username"],
             "password": SPEAKATOO_CONFIG["password"],
             "tts_title": filename,
