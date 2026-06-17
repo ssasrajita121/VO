@@ -130,30 +130,91 @@ Return ONLY the narration script in plain text. No formatting, no extra words.""
         fallback = f"Slide {slide_number}. {slide_content}"
         return ' '.join(fallback.split()[:max_words])
 
+# def generate_audio_speakatoo(text, filename="VoiceOver"):
+#     """Generate audio using Speakatoo API v1 - FIXED: Corrected payload format"""
+#     try:
+#         # Use JSON format with proper headers
+#         headers = {
+#             "X-API-KEY": SPEAKATOO_CONFIG["api_key"],
+#             "Content-Type": "application/json"
+#         }
+        
+#         # Corrected payload - ssml_mode as integer, not string
+#         payload = {
+#             "api_key": SPEAKATOO_CONFIG["api_key"],  # Add this line!
+#             "username": SPEAKATOO_CONFIG["username"],
+#             "password": SPEAKATOO_CONFIG["password"],
+#             "tts_title": filename,
+#             "tts_engine": SPEAKATOO_CONFIG["engine"],
+#             "tts_format": SPEAKATOO_CONFIG["format"],
+#             "tts_text": text,
+#             "tts_resource_ids": SPEAKATOO_CONFIG["voice_id"],
+#             "ssml_mode": 0,  # Changed from "0" (string) to 0 (integer)
+#             "synthesize_type": "save"
+#         }
+        
+#         # Send as JSON
+#         response = requests.post(
+#             SPEAKATOO_CONFIG["api_url"],
+#             json=payload,
+#             headers=headers,
+#             timeout=60
+#         )
+        
+#         st.write(f"🔍 Status: {response.status_code}")
+        
+#         if response.status_code == 200:
+#             result = response.json()
+#             st.write(f"🔍 Response: {result}")
+            
+#             # Check for success
+#             if result.get("status") == True or result.get("result"):
+#                 audio_url = result.get("tts_uri")
+                
+#                 if audio_url:
+#                     st.info(f"✅ Audio URL generated")
+#                     return audio_url
+#                 else:
+#                     st.error(f"❌ No audio URL in response: {result}")
+#                     return None
+#             else:
+#                 error_msg = result.get('error', result.get('message', 'Unknown error'))
+#                 st.error(f"❌ API Error: {error_msg}")
+#                 st.write(f"Full response: {result}")
+#                 return None
+#         else:
+#             st.error(f"❌ HTTP {response.status_code}")
+#             st.write(f"Response: {response.text[:500]}")
+#             return None
+            
+#     except Exception as e:
+#         st.error(f"❌ Exception: {str(e)}")
+#         import traceback
+#         st.error(traceback.format_exc())
+#         return None
 def generate_audio_speakatoo(text, filename="VoiceOver"):
-    """Generate audio using Speakatoo API v1 - FIXED: Corrected payload format"""
+    """Generate audio using Speakatoo API v1 - FINAL FIX: All values as strings"""
     try:
-        # Use JSON format with proper headers
         headers = {
             "X-API-KEY": SPEAKATOO_CONFIG["api_key"],
             "Content-Type": "application/json"
         }
         
-        # Corrected payload - ssml_mode as integer, not string
+        # ✅ ALL VALUES MUST BE STRINGS (with quotes)
         payload = {
-            "api_key": SPEAKATOO_CONFIG["api_key"],  # Add this line!
-            "username": SPEAKATOO_CONFIG["username"],
-            "password": SPEAKATOO_CONFIG["password"],
-            "tts_title": filename,
-            "tts_engine": SPEAKATOO_CONFIG["engine"],
-            "tts_format": SPEAKATOO_CONFIG["format"],
-            "tts_text": text,
-            "tts_resource_ids": SPEAKATOO_CONFIG["voice_id"],
-            "ssml_mode": 0,  # Changed from "0" (string) to 0 (integer)
-            "synthesize_type": "save"
+            "username": SPEAKATOO_CONFIG["username"],      # String ✅
+            "password": SPEAKATOO_CONFIG["password"],      # String ✅
+            "tts_title": filename,                          # String ✅
+            "ssml_mode": "0",                               # STRING "0" not integer 0 ✅
+            "tts_engine": "neural",                         # STRING "neural" ✅
+            "tts_format": "mp3",                            # STRING "mp3" ✅
+            "tts_text": text,                               # String ✅
+            "tts_resource_ids": SPEAKATOO_CONFIG["voice_id"],  # String ✅
+            "synthesize_type": "save"                       # STRING "save" ✅
         }
         
-        # Send as JSON
+        st.write(f"🔍 Sending TTS request for: {filename}")
+        
         response = requests.post(
             SPEAKATOO_CONFIG["api_url"],
             json=payload,
@@ -168,23 +229,16 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
             st.write(f"🔍 Response: {result}")
             
             # Check for success
-            if result.get("status") == True or result.get("result"):
+            if result.get("status") == True or result.get("tts_uri"):
                 audio_url = result.get("tts_uri")
-                
-                if audio_url:
-                    st.info(f"✅ Audio URL generated")
-                    return audio_url
-                else:
-                    st.error(f"❌ No audio URL in response: {result}")
-                    return None
+                st.info(f"✅ Audio URL: {audio_url}")
+                return audio_url
             else:
-                error_msg = result.get('error', result.get('message', 'Unknown error'))
+                error_msg = result.get('error', 'Unknown error')
                 st.error(f"❌ API Error: {error_msg}")
-                st.write(f"Full response: {result}")
                 return None
         else:
-            st.error(f"❌ HTTP {response.status_code}")
-            st.write(f"Response: {response.text[:500]}")
+            st.error(f"❌ HTTP {response.status_code}: {response.text[:200]}")
             return None
             
     except Exception as e:
@@ -192,7 +246,6 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
         import traceback
         st.error(traceback.format_exc())
         return None
-
 def add_audio_to_slide(slide, audio_url):
     """Download and embed audio into slide with speaker icon"""
     try:
