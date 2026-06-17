@@ -131,54 +131,59 @@ Return ONLY the narration script in plain text. No formatting, no extra words.""
         return ' '.join(fallback.split()[:max_words])
 
 def generate_audio_speakatoo(text, filename="VoiceOver"):
-    """Generate audio using Speakatoo API v1 - FIXED: Using form-urlencoded format"""
+    """Generate audio using Speakatoo API v1 - FIXED: Corrected payload format"""
     try:
-        # FIXED: Use form-urlencoded content type (not JSON)
+        # Use JSON format with proper headers
         headers = {
             "X-API-KEY": SPEAKATOO_CONFIG["api_key"],
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/json"
         }
         
-        # Payload as form data
+        # Corrected payload - ssml_mode as integer, not string
         payload = {
             "username": SPEAKATOO_CONFIG["username"],
             "password": SPEAKATOO_CONFIG["password"],
             "tts_title": filename,
-            "ssml_mode": "0",
             "tts_engine": SPEAKATOO_CONFIG["engine"],
             "tts_format": SPEAKATOO_CONFIG["format"],
             "tts_text": text,
             "tts_resource_ids": SPEAKATOO_CONFIG["voice_id"],
+            "ssml_mode": 0,  # Changed from "0" (string) to 0 (integer)
             "synthesize_type": "save"
         }
         
-        # FIXED: Use data parameter instead of json parameter
+        # Send as JSON
         response = requests.post(
             SPEAKATOO_CONFIG["api_url"],
-            data=payload,  # Changed from json=payload
+            json=payload,
             headers=headers,
             timeout=60
         )
         
-        st.write(f"🔍 Debug - Status: {response.status_code}")
+        st.write(f"🔍 Status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            st.write(f"🔍 Debug - Response: {result}")
+            st.write(f"🔍 Response: {result}")
             
-            if result.get("result") or result.get("status"):
+            # Check for success
+            if result.get("status") == True or result.get("result"):
                 audio_url = result.get("tts_uri")
                 
                 if audio_url:
+                    st.info(f"✅ Audio URL generated")
                     return audio_url
                 else:
                     st.error(f"❌ No audio URL in response: {result}")
                     return None
             else:
-                st.error(f"❌ API Error: {result.get('message', result)}")
+                error_msg = result.get('error', result.get('message', 'Unknown error'))
+                st.error(f"❌ API Error: {error_msg}")
+                st.write(f"Full response: {result}")
                 return None
         else:
-            st.error(f"❌ HTTP {response.status_code}: {response.text[:300]}")
+            st.error(f"❌ HTTP {response.status_code}")
+            st.write(f"Response: {response.text[:500]}")
             return None
             
     except Exception as e:
