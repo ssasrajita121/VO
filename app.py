@@ -131,13 +131,15 @@ Return ONLY the narration script in plain text. No formatting, no extra words.""
         return ' '.join(fallback.split()[:max_words])
 
 def generate_audio_speakatoo(text, filename="VoiceOver"):
-    """Generate audio using Speakatoo API v1"""
+    """Generate audio using Speakatoo API v1 - FIXED: Using form-urlencoded format"""
     try:
+        # FIXED: Use form-urlencoded content type (not JSON)
         headers = {
             "X-API-KEY": SPEAKATOO_CONFIG["api_key"],
-            "Content-Type": "application/json"
+            "Content-Type": "application/x-www-form-urlencoded"
         }
         
+        # Payload as form data
         payload = {
             "username": SPEAKATOO_CONFIG["username"],
             "password": SPEAKATOO_CONFIG["password"],
@@ -150,15 +152,19 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
             "synthesize_type": "save"
         }
         
+        # FIXED: Use data parameter instead of json parameter
         response = requests.post(
             SPEAKATOO_CONFIG["api_url"],
-            json=payload,
+            data=payload,  # Changed from json=payload
             headers=headers,
             timeout=60
         )
         
+        st.write(f"🔍 Debug - Status: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
+            st.write(f"🔍 Debug - Response: {result}")
             
             if result.get("result") or result.get("status"):
                 audio_url = result.get("tts_uri")
@@ -166,17 +172,19 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
                 if audio_url:
                     return audio_url
                 else:
-                    st.error(f"No audio URL: {result}")
+                    st.error(f"❌ No audio URL in response: {result}")
                     return None
             else:
-                st.error(f"API Error: {result.get('message', result)}")
+                st.error(f"❌ API Error: {result.get('message', result)}")
                 return None
         else:
-            st.error(f"HTTP {response.status_code}: {response.text[:200]}")
+            st.error(f"❌ HTTP {response.status_code}: {response.text[:300]}")
             return None
             
     except Exception as e:
-        st.error(f"Exception: {str(e)}")
+        st.error(f"❌ Exception: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
         return None
 
 def add_audio_to_slide(slide, audio_url):
