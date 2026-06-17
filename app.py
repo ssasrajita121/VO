@@ -11,6 +11,8 @@ from pptx.dml.color import RGBColor
 import google.generativeai as genai
 from dotenv import load_dotenv
 import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Load environment
 load_dotenv()
@@ -38,6 +40,26 @@ SPEAKATOO_CONFIG = {
     "engine": "neural",
     "format": "mp3"
 }
+
+def requests_retry_session(
+    retries=3,
+    backoff_factor=0.3,
+    status_forcelist=(500, 502, 504),
+    session=None,
+):
+    """Create a requests session with retry logic for Streamlit Cloud"""
+    session = session or requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
 def extract_slide_content(slide):
     """Extract text content from a slide, excluding header/footer"""
@@ -193,7 +215,7 @@ Return ONLY the narration script in plain text. No formatting, no extra words.""
 #         st.error(traceback.format_exc())
 #         return None
 def generate_audio_speakatoo(text, filename="VoiceOver"):
-    """Generate audio using Speakatoo API v1 - FINAL FIX: All values as strings"""
+    """Generate audio using Speakatoo API v1 - WITH RETRY LOGIC for Streamlit Cloud"""
     try:
         headers = {
             "X-API-KEY": SPEAKATOO_CONFIG["api_key"],
@@ -215,11 +237,12 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
         
         st.write(f"🔍 Sending TTS request for: {filename}")
         
-        response = requests.post(
+        # Use retry session with longer timeout for Streamlit Cloud
+        response = requests_retry_session(retries=3).post(
             SPEAKATOO_CONFIG["api_url"],
             json=payload,
             headers=headers,
-            timeout=60
+            timeout=120  # Increased timeout for Streamlit Cloud reliability
         )
         
         st.write(f"🔍 Status: {response.status_code}")
@@ -228,19 +251,28 @@ def generate_audio_speakatoo(text, filename="VoiceOver"):
             result = response.json()
             st.write(f"🔍 Response: {result}")
             
-            # Check for success
-            if result.get("status") == True or result.get("tts_uri"):
+            # Check for success - use 'result' field (confirmed from local test)
+            if result.get("result") == True or result.get("tts_uri"):
                 audio_url = result.get("tts_uri")
-                st.info(f"✅ Audio URL: {audio_url}")
+                st.info(f"✅ Audio generated successfully")
                 return audio_url
             else:
-                error_msg = result.get('error', 'Unknown error')
+                error_msg = result.get('error') or result.get('message', 'Unknown error')
                 st.error(f"❌ API Error: {error_msg}")
                 return None
         else:
-            st.error(f"❌ HTTP {response.status_code}: {response.text[:200]}")
+            st.error(f"❌ HTTP {response.status_code}")
+            st.write(f"Response: {response.text[:500]}")
             return None
             
+    except requests.exceptions.Timeout:
+        st.error(f"❌ Timeout: Speakatoo server took too long to respond")
+        st.info("💡 System retried automatically, but still failed.")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error(f"❌ Connection Error: Cannot reach Speakatoo server")
+        st.info("💡 This might be a Streamlit Cloud network restriction. Contact Speakatoo support to whitelist Streamlit IP ranges.")
+        return None
     except Exception as e:
         st.error(f"❌ Exception: {str(e)}")
         import traceback
